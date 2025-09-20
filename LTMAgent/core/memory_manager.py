@@ -1,82 +1,115 @@
-from langchain_core.runnables import RunnableConfig
+"""
+Memory management for the LTM application using LangMem with MongoDB Store.
+Supports Episodic, Semantic, Procedural, and Associative memory types.
+"""
+
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.documents import Document
-#from langchain_core.vectorstores import InMemoryVectorStore
-import uuid
-from typing import List, Optional
+from langgraph.store.mongodb.base import MongoDBStore, create_vector_index_config
+from pymongo import MongoClient
+import os
+from pydantic import BaseModel, Field
+from langmem import create_manage_memory_tool, create_search_memory_tool
+from typing import List
 
-from utils.utils import get_user_id, get_thread_id, KnowledgeTriple
-from config.app_config import get_config
-from langgraph.store.mongodb import MongoDBStore
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+print("Initializing MongoDB Memory Store")
 
-# Initialize the VectorStore where memories will be stored
-print("Initializing Vector Store")
-recall_vector_store = MongoDBStore(
-    connection_string="your_mongo_atlas_connection_string",
-    db_name="your_db",
-    collection_name="recall_memory",
-    embedding=GoogleGenerativeAIEmbeddings()
+# MongoDB connection
+mongo_client = MongoClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+db = mongo_client["ltm_agent"]
+collection = db["memories"]
+
+# LangGraph MongoDB store for LangMem tools
+memory_store = MongoDBStore(
+    collection=collection,
+    index_config=create_vector_index_config(
+        embed=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
+        dims=384,  # all-MiniLM-L6-v2 has 384 dimensions
+        fields=["content"],
+    ),
+    auto_index_timeout=60  # Wait up to 60 seconds for index creation
 )
 
+# ============================================================================
+# MEMORY SCHEMAS
+# ============================================================================
 
+class Episode(BaseModel):
+    """Episodic memory captures specific experiences and learning moments.
+    Each episode records what happened, the agent's reasoning, actions taken, and outcomes."""
 
-# Cache configuration values to avoid repeated lookups
-VECTOR_K_RESULTS = get_config("vector_k_results", 3)
-
-def save_recall_memory(memory: str, config: RunnableConfig) -> str:
-    user_id = get_user_id(config)
-    thread_id = get_thread_id(config)
-
-    doc_id = str(uuid.uuid4())
-    document = Document(
-        page_content=memory.strip(),
-        id=doc_id,
-        metadata={
-            "user_id": user_id,
-            "thread_id": thread_id,
-            "timestamp": str(uuid.uuid1())
-        }
+    observation: str = Field(..., description="The context and setup - what happened in the situation")
+    thoughts: str = Field(
+        ...,
+        description="Internal reasoning process and observations of the agent that led to the action and result"
     )
-    # Add the document to the vector store
-    recall_vector_store.put(("recall", user_id, thread_id), doc_id, document)
-    return memory
+    action: str = Field(
+        ...,
+        description="What was done, how, and in what format. Include salient details for success"
+    )
+    result: str = Field(
+        ...,
+        description="Outcome and retrospective analysis. What worked well? What could be improved?"
+    )
 
-def search_recall_memories(query: str, config: RunnableConfig) -> List[str]:
-    # Get the user ID and thread ID from the configuration
-    user_id = get_user_id(config)
-    thread_id = get_thread_id(config)
-    # Define a filter to get only memories for this user and thread
-    results = recall_vector_store.search(("recall", user_id, thread_id), query=query.strip(), limit=VECTOR_K_RESULTS)
-    return [res.value.page_content for res in results]
-    
-    
+class Triple(BaseModel):
+    """Semantic memory stores factual information as triples.
+    Captures relationships, preferences, and structured knowledge."""
+
+    subject: str = Field(..., description="The entity being described")
+    predicate: str = Field(..., description="The relationship or property")
+    object: str = Field(..., description="The target of the relationship")
+    context: str | None = Field(None, description="Optional additional context or clarification")
+
+class Procedural(BaseModel):
+    """Procedural memory stores instructions, rules, and procedures for recurring tasks.
+    Captures how to perform specific actions or follow established processes."""
+
+    task: str = Field(..., description="The task or process this procedure applies to")
+    steps: List[str] = Field(..., description="Step-by-step instructions for completing the task")
+    conditions: str | None = Field(None, description="When or under what circumstances to apply this procedure")
+    outcome: str | None = Field(None, description="Expected result or success criteria")
 
 
-def save_recall_memory_knowledge_triple(memories: List[KnowledgeTriple], config: RunnableConfig) -> str:
-    """Save memory to vectorstore for later semantic retrieval."""
-    # Get the user ID and thread ID from the configuration
-    user_id = get_user_id(config)
-    thread_id = get_thread_id(config)
-    
-    # Process each memory in the list
-    for memory in memories:
-        # Create a serialized representation of the knowledge triple
-        serialized = " ".join(memory.values())
-        
-        # Create a document with the serialized content and metadata
-        document = Document(
-            page_content=serialized,
-            id=str(uuid.uuid4()),
-            metadata={
-                "user_id": user_id,
-                "thread_id": thread_id,
-                "timestamp": str(uuid.uuid1()),
-                **memory,
-            },
-        )
-        
-        # Add the document to the vector store
-        recall_vector_store.add_documents([document])
-    
-    return memories
+# ============================================================================
+# MEMORY TOOLS
+# ============================================================================
+
+# Episodic Memory Tools
+manage_episodic_memory_tool = create_manage_memory_tool(
+    namespace=("memories", "{user_id}", "episodes"),
+    store=memory_store
+)
+search_episodic_memory_tool = create_search_memory_tool(
+    namespace=("memories", "{user_id}", "episodes"),
+    store=memory_store
+)
+
+# Semantic Memory Tools
+manage_semantic_memory_tool = create_manage_memory_tool(
+    namespace=("memories", "{user_id}", "triples"),
+    store=memory_store
+)
+search_semantic_memory_tool = create_search_memory_tool(
+    namespace=("memories", "{user_id}", "triples"),
+    store=memory_store
+)
+
+# Procedural Memory Tools
+manage_procedural_memory_tool = create_manage_memory_tool(
+    namespace=("memories", "{user_id}", "procedures"),
+    store=memory_store
+)
+search_procedural_memory_tool = create_search_memory_tool(
+    namespace=("memories", "{user_id}", "procedures"),
+    store=memory_store
+)
+
+# General Memory Tools (for mixed usage)
+manage_general_memory_tool = create_manage_memory_tool(
+    namespace=("memories", "{user_id}"),
+    store=memory_store
+)
+search_general_memory_tool = create_search_memory_tool(
+    namespace=("memories", "{user_id}"),
+    store=memory_store
+)

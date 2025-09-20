@@ -8,9 +8,8 @@ from langgraph.graph import END
 
 from core.state import State
 from config.prompt_templates import prompt
-from core.tools import search_recall_memories_tool
 
-def agent(state: State, model_with_tools) -> dict:
+def agent(state: State, config: RunnableConfig, model_with_tools) -> dict:
     """Process the current state and generate a response using the LLM.
 
     Args:
@@ -44,10 +43,10 @@ def load_memories(state: State, config: RunnableConfig) -> dict:
     Returns:
         dict: The updated state with loaded memories.
     """
-    convo_str = get_buffer_string(state["messages"])
-    recall_memories = search_recall_memories_tool.invoke(convo_str, config)
+    # LangMem tools will handle memory retrieval when the agent needs it
+    # No automatic memory loading - agent uses tools on-demand for all memory operations
     return {
-        "recall_memories": recall_memories,
+        "recall_memories": [],
     }
 
 def route_tools(state: State):

@@ -2,9 +2,11 @@
 Graph construction for the LTM application.
 """
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
+import os
+from pymongo import MongoClient
 
 from core.state import State
 from core.agent import agent, load_memories, route_tools
@@ -25,7 +27,7 @@ def build_graph(model_with_tools):
     
     # Add nodes
     builder.add_node("load_memories", load_memories)
-    builder.add_node("agent", lambda state, config: agent(state, model_with_tools))
+    builder.add_node("agent", lambda state, config: agent(state, config, model_with_tools))
     builder.add_node("tools", ToolNode(all_tools))
     
     # Add edges to the graph
@@ -34,8 +36,9 @@ def build_graph(model_with_tools):
     builder.add_conditional_edges("agent", route_tools, ["tools", END])
     builder.add_edge("tools", "agent")
     
-    # Compile the graph
-    memory = MemorySaver()
+    # Compile the graph with MongoDB checkpointer for persistent memory
+    mongo_client = MongoClient(os.getenv("MONGODB_URI", "mongodb://localhost:27017"))
+    memory = MongoDBSaver(mongo_client, db_name="ltm_agent")
     return builder.compile(checkpointer=memory)
 
 def pretty_print_stream_chunk(chunk):
