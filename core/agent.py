@@ -20,43 +20,81 @@ def analyze_sentiment(text: str) -> str:
     # Preprocess the text
     text_lower = text.lower().strip()
 
+    # Initialize scores for different aspects
+    crisis_score = 0
+    emotional_escalation_score = 0
+    physical_distress_score = 0
+    relational_stress_score = 0
+
     # Approach 1: Keyword-based detection with context awareness
     for pattern in SystemConfig.CRISIS_PATTERNS:
         if re.search(pattern, text_lower):
-            return "CRITICAL"
+            crisis_score += 3  # High risk indicator
 
-    # Approach 2: Sentiment intensity scoring
+    # Approach 2: High negative indicators
+    for indicator in SystemConfig.HIGH_NEG_INDICATORS:
+        if indicator in text_lower:
+            crisis_score += 2  # Medium-high risk indicator
+
+    # Approach 3: Crisis markers
+    for marker in SystemConfig.CRISIS_MARKERS:
+        if marker in text_lower:
+            crisis_score += 3  # High risk indicator
+
+    # Approach 4: Emotional escalation patterns
+    for pattern in SystemConfig.EMOTIONAL_ESCALATION_PATTERNS:
+        if re.search(pattern, text_lower):
+            emotional_escalation_score += 2
+
+    # Approach 5: Physical distress indicators
+    for indicator in SystemConfig.PHYSICAL_DISTRESS_INDICATORS:
+        if indicator in text_lower:
+            physical_distress_score += 1
+
+    # Approach 6: Relational stress indicators
+    for indicator in SystemConfig.RELATIONAL_STRESS_INDICATORS:
+        if indicator in text_lower:
+            relational_stress_score += 1
+
+    # Approach 7: Sentiment intensity scoring
     neg_count = sum(text_lower.count(word) for word in SystemConfig.NEGATIVE_WORDS)
     pos_count = sum(text_lower.count(word) for word in SystemConfig.POSITIVE_WORDS)
 
     # Calculate sentiment ratio
     if neg_count > 0:
         sentiment_ratio = neg_count / (neg_count + pos_count + 1)  # +1 to avoid division by zero
+        if sentiment_ratio > 0.7:  # Highly negative sentiment
+            crisis_score += int(sentiment_ratio * 10)  # Scale score based on ratio
 
-        # If highly negative sentiment combined with certain phrases
-        if sentiment_ratio > SystemConfig.SELFIE_REQUEST_MOOD_THRESHOLD:  # Configurable threshold
-            for indicator in SystemConfig.HIGH_NEG_INDICATORS:
-                if indicator in text_lower:
-                    return "CRITICAL"
-
-    # Approach 3: Linguistic markers of crisis
-    for marker in SystemConfig.CRISIS_MARKERS:
-        if marker in text_lower:
-            return "CRITICAL"
-
-    # Approach 4: Emotional escalation patterns
+    # Approach 8: Emotional escalation patterns
     exclamation_pattern = r'[!]{2,}'  # Multiple exclamation marks
     caps_pattern = r'(?:[A-Z]{2,})'  # Multiple consecutive capital letters
 
     if re.search(exclamation_pattern, text) and neg_count > pos_count:
-        return "WARNING"  # High emotional state, monitor closely
+        emotional_escalation_score += 2  # High emotional state
 
-    # Approach 5: Isolation and finality language
+    # Approach 9: Isolation and finality language
     for pattern in SystemConfig.ISOLATION_PATTERNS:
         if re.search(pattern, text_lower):
-            return "WARNING"
+            relational_stress_score += 1
 
-    return "NORMAL"
+    # Calculate total risk score
+    total_risk_score = (
+        crisis_score +
+        emotional_escalation_score * 1.5 +
+        physical_distress_score * 0.5 +
+        relational_stress_score * 0.8
+    )
+
+    # Determine risk level based on thresholds
+    if total_risk_score >= 8:
+        return "CRITICAL"
+    elif total_risk_score >= 4:
+        return "WARNING"
+    elif total_risk_score >= 2:
+        return "CAUTION"
+    else:
+        return "NORMAL"
 
 def should_request_selfie(state: State, config: RunnableConfig) -> bool:
     """Determine if a selfie should be requested based on time or conversation patterns."""
@@ -105,26 +143,48 @@ def crisis_node(state: State, config: RunnableConfig):
     from core.tools import send_alert_tool
     from core.integrations import get_integration_manager
 
-    # Prepare crisis response message
-    crisis_message = (
-        "I've detected that you may be in distress. I'm activating safety protocols "
-        "and alerting your emergency contacts. Please stay safe and reach out to someone "
-        "you trust immediately. If you're having thoughts of self-harm, please contact "
-        "the National Suicide Prevention Lifeline at 988 or your local emergency number."
-    )
-
     # Get user ID for context
     user_id = config.get("configurable", {}).get("user_id")
+
+    # Determine the severity level based on the last message
+    last_message = state["messages"][-1] if state["messages"] else None
+    if last_message and hasattr(last_message, 'content'):
+        severity = analyze_sentiment(last_message.content)
+    else:
+        severity = "CRITICAL"  # Default to critical if we can't determine
+
+    # Prepare crisis response message based on severity
+    if severity == "CRITICAL":
+        crisis_message = (
+            "I've detected that you are in immediate distress. I'm activating emergency "
+            "protocols and alerting your emergency contacts. Please stay safe and reach "
+            "out to someone you trust immediately. If you're having thoughts of self-harm, "
+            "please contact the National Suicide Prevention Lifeline at 988 or your local "
+            "emergency number right now."
+        )
+    elif severity == "WARNING":
+        crisis_message = (
+            "I'm concerned about what you've shared. I'm alerting your support contacts "
+            "so they can check on you. Please consider reaching out to someone you trust "
+            "who can provide support right now."
+        )
+    else:  # CAUTION
+        crisis_message = (
+            "I'm noticing some concerning patterns in our conversation. I'm sending a "
+            "notification to your support contacts so they can check in on you. Remember, "
+            "it's okay to ask for help when you need it."
+        )
 
     # Create multiple tool calls for different alert channels
     tool_calls = []
 
     # Standard alert tool call
+    alert_message = f"URGENT: User may be in {severity.lower()} distress. {'Immediate' if severity == 'CRITICAL' else 'Prompt'} attention required."
     tool_calls.append({
         "name": "send_alert_tool",
-        "id": "crisis_alert_" + str(hash(crisis_message)),
+        "id": f"crisis_alert_{severity.lower()}_{str(hash(crisis_message))[:8]}",
         "args": {
-            "message": "URGENT: User may be in crisis. Immediate attention required.",
+            "message": alert_message,
             "specific_contact": "emergency_contacts"
         }
     })
@@ -136,10 +196,10 @@ def crisis_node(state: State, config: RunnableConfig):
     if integration_manager.whatsapp.is_available():
         tool_calls.append({
             "name": "send_whatsapp_message_tool",
-            "id": "whatsapp_crisis_alert_" + str(hash(crisis_message)),
+            "id": f"whatsapp_crisis_alert_{severity.lower()}_{str(hash(crisis_message))[:8]}",
             "args": {
                 "phone_number": "EMERGENCY_CONTACT_PHONE",  # This would be pulled from user profile
-                "message": f"CRISIS ALERT: User {user_id} may be in distress. Immediate attention required."
+                "message": f"{severity.upper()} CRISIS ALERT: User {user_id} may be in distress. {'IMMEDIATE' if severity == 'CRITICAL' else 'PROMPT'} attention required."
             }
         })
 
@@ -147,10 +207,10 @@ def crisis_node(state: State, config: RunnableConfig):
     if integration_manager.telegram.is_available():
         tool_calls.append({
             "name": "send_telegram_message_tool",
-            "id": "telegram_crisis_alert_" + str(hash(crisis_message)),
+            "id": f"telegram_crisis_alert_{severity.lower()}_{str(hash(crisis_message))[:8]}",
             "args": {
                 "chat_id": "EMERGENCY_CHAT_ID",  # This would be pulled from user profile
-                "message": f"CRISIS ALERT: User {user_id} may be in distress. Immediate attention required."
+                "message": f"{severity.upper()} CRISIS ALERT: User {user_id} may be in distress. {'IMMEDIATE' if severity == 'CRITICAL' else 'PROMPT'} attention required."
             }
         })
 
@@ -158,10 +218,10 @@ def crisis_node(state: State, config: RunnableConfig):
     if user_id and integration_manager.ehr.is_available():
         tool_calls.append({
             "name": "log_to_ehr_tool",
-            "id": "ehr_crisis_log_" + str(hash(crisis_message)),
+            "id": f"ehr_crisis_log_{severity.lower()}_{str(hash(crisis_message))[:8]}",
             "args": {
                 "patient_id": user_id,
-                "note": f"Crisis detected at {datetime.now()}. User may be in distress.",
+                "note": f"{severity.upper()} crisis detected at {datetime.now()}. User may be in distress. Severity level: {severity}",
                 "category": "crisis_alert"
             }
         })
@@ -173,12 +233,28 @@ def crisis_node(state: State, config: RunnableConfig):
             service = LTMService()
             service.send_notification(
                 user_id=user_id,
-                message="CRISIS DETECTED: Emergency protocols activated. Help is being contacted.",
+                message=f"{severity.upper()} CRISIS DETECTED: Emergency protocols activated. Help is being contacted.",
                 notification_type="alert"
             )
         except:
             # If service initialization fails, we'll still proceed with the tool calls
             pass
+
+    # If in CRITICAL state, also trigger visual/voice intervention if possible
+    if severity == "CRITICAL":
+        # Request to access camera if possible
+        tool_calls.append({
+            "name": "request_selfie_tool",
+            "id": f"critical_selfie_request_{str(hash(crisis_message))[:8]}",
+            "args": {"reason": "immediate wellness check due to crisis detection"}
+        })
+
+        # Request to analyze visual context if available
+        tool_calls.append({
+            "name": "analyze_visual_context_tool",
+            "id": f"critical_visual_analysis_{str(hash(crisis_message))[:8]}",
+            "args": {"image_description": "Emergency visual assessment requested due to crisis detection"}
+        })
 
     return {
         "messages": [AIMessage(
@@ -202,7 +278,7 @@ def agent(state: State, config: RunnableConfig, model_with_tools) -> dict:
     last_message = state["messages"][-1]
     if last_message.type == "human":
         sentiment = analyze_sentiment(last_message.content)
-        if sentiment == "CRITICAL":
+        if sentiment in ["CRITICAL", "WARNING"]:  # Trigger crisis response for both critical and warning levels
             return {"next_node": "crisis_node"}
 
     # Check if we should request a selfie
