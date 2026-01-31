@@ -104,6 +104,40 @@ class TelegramIntegration(ExternalIntegration):
             return False
 
 
+class TwilioIntegration(ExternalIntegration):
+    """Twilio SMS integration."""
+    def __init__(self):
+        self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        self.from_number = os.getenv("TWILIO_FROM_NUMBER")
+        self._client = None
+        # Lazy import to avoid hard dependency at import-time
+        try:
+            from twilio.rest import Client
+            if self.is_available():
+                self._client = Client(self.account_sid, self.auth_token)
+        except Exception:
+            self._client = None
+
+    def is_available(self) -> bool:
+        return bool(self.account_sid and self.auth_token and self.from_number and self._client)
+
+    def send_message(self, recipient: str, message: str) -> bool:
+        if not self.is_available():
+            print("Twilio integration not configured")
+            return False
+        try:
+            sent = self._client.messages.create(
+                body=message,
+                from_=self.from_number,
+                to=recipient
+            )
+            return bool(getattr(sent, 'sid', None))
+        except Exception as e:
+            print(f"Error sending Twilio message: {e}")
+            return False
+
+
 class EHRIntegration:
     """Electronic Health Records integration."""
     

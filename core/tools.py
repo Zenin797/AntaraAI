@@ -90,64 +90,95 @@ def send_alert_tool(message: str, specific_contact: str = "guardian"):
 import random
 from typing import List
 
+class MusicTherapyTool:
+    """Class-based implementation of the Music Therapy tool.
+
+    This class encapsulates recommendation logic and session logging so it can be
+    instantiated and used directly or wrapped by a `tool`/`StructuredTool` adapter.
+    """
+    def __init__(self, db_client=None):
+        # db_client is expected to be the pymongo `db` object imported from memory_manager
+        self.db = db_client
+
+    def recommend(self, mood: str, duration_minutes: int = 10) -> str:
+        """Provide a music recommendation and log the session."""
+        music_recommendations = {
+            "happy": [
+                "Upbeat pop music to maintain positive energy",
+                "Classical music for cognitive enhancement",
+                "Jazz for creative stimulation"
+            ],
+            "sad": [
+                "Gentle classical music for emotional processing",
+                "Nature sounds for comfort",
+                "Soft instrumental music for reflection"
+            ],
+            "anxious": [
+                "Ambient music for relaxation",
+                "Binaural beats for stress reduction",
+                "Nature sounds (rain, ocean waves) for calm"
+            ],
+            "calm": [
+                "Meditation music for deeper relaxation",
+                "Acoustic guitar for peaceful atmosphere",
+                "Piano compositions for introspection"
+            ],
+            "energetic": [
+                "Motivational rock for energy boost",
+                "Upbeat electronic music for focus",
+                "Folk music for positive vibes"
+            ],
+            "sleepy": [
+                "Slow tempo classical music for sleep",
+                "White noise for better sleep quality",
+                "Guided meditation music for rest"
+            ]
+        }
+
+        mood_normalized = (mood or "").lower()
+        if mood_normalized not in music_recommendations:
+            mood_normalized = "calm"
+
+        selected_music = random.choice(music_recommendations[mood_normalized])
+
+        # Log session if db available
+        try:
+            if self.db:
+                self.db["music_therapy_sessions"].insert_one({
+                    "mood": mood_normalized,
+                    "recommendation": selected_music,
+                    "duration": duration_minutes,
+                    "timestamp": datetime.now()
+                })
+        except Exception:
+            # Never fail the tool due to logging issues
+            pass
+
+        return f"Music Therapy Recommendation: {selected_music}. Duration: {duration_minutes} minutes. Therapeutic target: {mood_normalized}."
+
+# Adapter: keep the existing functional tool for backwards compatibility
 @tool
 def music_therapy_tool(mood: str, duration_minutes: int = 10) -> str:
     """Provides music therapy recommendations based on the user's mood.
-    Args:
-        mood: Current mood ('happy', 'sad', 'anxious', 'calm', 'energetic', 'sleepy')
-        duration_minutes: Duration for the music session (default 10 minutes)
-    Returns:
-        String with music recommendations and therapeutic benefits
+    This function wraps the class-based implementation for backward compatibility.
     """
-    music_recommendations = {
-        "happy": [
-            "Upbeat pop music to maintain positive energy",
-            "Classical music for cognitive enhancement",
-            "Jazz for creative stimulation"
-        ],
-        "sad": [
-            "Gentle classical music for emotional processing",
-            "Nature sounds for comfort",
-            "Soft instrumental music for reflection"
-        ],
-        "anxious": [
-            "Ambient music for relaxation",
-            "Binaural beats for stress reduction",
-            "Nature sounds (rain, ocean waves) for calm"
-        ],
-        "calm": [
-            "Meditation music for deeper relaxation",
-            "Acoustic guitar for peaceful atmosphere",
-            "Piano compositions for introspection"
-        ],
-        "energetic": [
-            "Motivational rock for energy boost",
-            "Upbeat electronic music for focus",
-            "Folk music for positive vibes"
-        ],
-        "sleepy": [
-            "Slow tempo classical music for sleep",
-            "White noise for better sleep quality",
-            "Guided meditation music for rest"
-        ]
-    }
+    instance = MusicTherapyTool(db_client=db)
+    return instance.recommend(mood, duration_minutes)
 
-    mood = mood.lower()
-    if mood not in music_recommendations:
-        mood = "calm"  # Default to calm if mood not recognized
+# Expose a class-based tool instance as a StructuredTool if needed
+try:
+    from langchain_core.tools import StructuredTool
+    music_therapy_class_tool = StructuredTool(
+        name="music_therapy_class",
+        description="Music therapy recommendations (class-based)",
+        func=MusicTherapyTool(db_client=db).recommend
+    )
+    all_tools.append(music_therapy_class_tool)
+except Exception:
+    # If StructuredTool isn't available, continue silently (function wrapper exists)
+    pass
 
-    selected_music = random.choice(music_recommendations[mood])
-
-    # Log the music therapy session
-    db["music_therapy_sessions"].insert_one({
-        "mood": mood,
-        "recommendation": selected_music,
-        "duration": duration_minutes,
-        "timestamp": datetime.now()
-    })
-
-    return f"Music Therapy Recommendation: {selected_music}. Duration: {duration_minutes} minutes. This music is known to help with {mood} feelings."
-
+# End of Music Therapy Tool
 @tool
 def request_selfie_tool(reason: str = "routine check-in") -> str:
     """Requests the user to take a selfie for mood assessment.
