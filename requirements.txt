@@ -15,3 +15,5 @@ langmem
 streamlit
 pandas
 plotly
+fastapi
+uvicorn
