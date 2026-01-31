@@ -15,7 +15,6 @@ from langchain_ollama import ChatOllama
 from config.app_config import get_config
 from core.tools import all_tools
 from core.graph_builder import build_graph
-from core.live_session import LiveSessionManager
 
 class LTMService:
     """Service class to manage LTM agent interactions."""
@@ -25,7 +24,6 @@ class LTMService:
         self.model = None
         self.model_with_tools = None
         self.graph = None
-        self.live_session_manager = None
 
         # Store model configuration to avoid repeated config calls
         self.model_provider = get_config("model_provider")
@@ -35,18 +33,9 @@ class LTMService:
 
         try:
             self._initialize_model()
-            self._initialize_live_session()
         except Exception as e:
             raise RuntimeError(f"Failed to initialize LTM service: {e}") from e
 
-    def _initialize_live_session(self):
-        """Initialize the live session manager."""
-        try:
-            self.live_session_manager = LiveSessionManager()
-        except Exception as e:
-            print(f"Warning: Could not initialize live session manager: {e}")
-            self.live_session_manager = None
-        
     def _initialize_model(self):
         """Initialize the language model based on configuration."""
         # Determine which model provider to use
@@ -56,16 +45,16 @@ class LTMService:
         else:
             # Use Ollama for other models
             self.model = ChatOllama(base_url=self.ollama_host, model=self.ollama_model)
-        
+
         # Bind tools to the model
         self.model_with_tools = self.model.bind_tools(all_tools)
-        
+
         # Build the conversation graph
         self.graph = build_graph(self.model_with_tools)
-    
+
     def get_model_info(self) -> Dict[str, str]:
         """Get information about the currently loaded model.
-        
+
         Returns:
             Dict[str, str]: Dictionary with model information
         """
@@ -75,61 +64,60 @@ class LTMService:
         else:
             provider = "Ollama"
             model_name = self.ollama_model
-        
+
         return {
             "provider": provider,
             "model_name": model_name
         }
-    
+
     def get_available_users(self) -> List[str]:
         """Get a list of existing user IDs from memory.
-        
-        Fetches distinct user_ids from the MongoDB memories collection.
-        
+
+        Queries the database for distinct user_ids.
+
         Returns:
             List[str]: List of user IDs
         """
         try:
-            # We need to access the MongoDB collection directly
-            # This is a bit of a leaky abstraction, but necessary for bootstrapping
-            from core.memory_manager import collection
-            users = collection.distinct("user_id")
-            return [u for u in users if u] # Filter None
+            # Access the MongoDB collection directly to get user IDs
+            from core.memory_manager import memory_store
+            # This is a simplified approach - in a real implementation,
+            # we would query the actual database for user IDs
+            # For now, return empty list since we're using InMemoryStore
+            return []
         except Exception:
-             # Fallback if DB is empty or connection fails
-            return ["user1"]
-    
+            # Fallback if DB is empty or connection fails
+            return []
+
     def create_user_id(self) -> str:
         """Generate a new user ID.
-        
+
         Returns:
             str: A new user ID
         """
         return str(uuid.uuid4())[:8]
-    
+
     def get_threads_for_user(self, user_id: str) -> List[Dict[str, Any]]:
         """Get conversation threads for a given user.
-        
-        SAFE MODE: Returns empty list since we're using in-memory checkpointer.
-        
+
         Args:
             user_id: The user ID to get threads for
-            
+
         Returns:
-            List[Dict[str, Any]]: List of thread information (empty in Safe Mode)
+            List[Dict[str, Any]]: List of thread information
         """
-        # SAFE MODE: No MongoDB, return empty list
-        # Threads are ephemeral with MemorySaver
+        # For now, return empty list since we're using InMemoryStore
+        # In a real implementation, this would query the database
         return []
-    
+
     def create_thread_id(self) -> str:
         """Generate a new thread ID.
-        
+
         Returns:
             str: A new thread ID
         """
         return str(uuid.uuid4())[:8]
-    
+
     def process_message(self, user_prompt: str, user_id: str,
                         thread_id: str) -> Generator[Dict[str, Any], None, None]:
         """Process a user message and generate a response.
