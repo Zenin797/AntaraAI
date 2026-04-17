@@ -16,6 +16,7 @@ interface Message {
 export const MainPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [retryAfter, setRetryAfter] = useState(60);
   const [generatedCode, setGeneratedCode] = useState('');
@@ -24,26 +25,39 @@ export const MainPage = () => {
   const chatAction = useAction(chat);
   const generateAction = useAction(generateScript);
 
+  const handleRateLimitError = (error: any) => {
+    if (error.statusCode === 429) {
+      setIsRateLimited(true);
+      const seconds = error.data?.retryAfter || 60;
+      setRetryAfter(seconds);
+      setTimeout(() => setIsRateLimited(false), seconds * 1000);
+    }
+  };
+
   const handleSendMessage = async (text: string) => {
     // 1. Add User Message to UI
     const newUserMsg: Message = { role: 'user', content: text };
-    setMessages(prev => [...prev, newUserMsg]);
+    const updatedMessages = [...messages, newUserMsg];
+    setMessages(updatedMessages);
 
-    // 2. Call Wasp Chat Action
+    // 2. Call Wasp Chat Action with conversation history
     setIsTyping(true);
     try {
-      const response = await chatAction({ message: text });
+      const response = await chatAction({
+        message: text,
+        conversationHistory: updatedMessages.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      });
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }]);
     } catch (error: any) {
       console.error('CHAT_ERROR:', error);
-      if (error.statusCode === 429) {
-        setIsRateLimited(true);
-        setRetryAfter(error.data?.retryAfter || 60);
-        setTimeout(() => setIsRateLimited(false), (error.data?.retryAfter || 60) * 1000);
-      } else {
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: "ERROR: Communication failure. Please check your connection or system logs." 
+      handleRateLimitError(error);
+      if (error.statusCode !== 429) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: "ERROR: Communication failure. Please check your connection or system logs."
         }]);
       }
     } finally {
@@ -53,12 +67,13 @@ export const MainPage = () => {
 
   const handleGenerate = async () => {
     if (messages.length === 0) return;
-    
+
     // Use the last assistant message as the refined prompt
-    const refinedPrompt = messages[messages.length - 1].content;
+    const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
+    const refinedPrompt = lastAssistantMsg?.content || messages[messages.length - 1].content;
     const originalPrompt = messages[0].content;
 
-    setIsTyping(true);
+    setIsGenerating(true);
     try {
       const result = await generateAction({ refinedPrompt, originalPrompt });
       if (result && (result as any).generatedCode) {
@@ -66,13 +81,9 @@ export const MainPage = () => {
       }
     } catch (error: any) {
       console.error('GENERATE_ERROR:', error);
-      if (error.statusCode === 429) {
-        setIsRateLimited(true);
-        setRetryAfter(error.data?.retryAfter || 60);
-        setTimeout(() => setIsRateLimited(false), (error.data?.retryAfter || 60) * 1000);
-      }
+      handleRateLimitError(error);
     } finally {
-      setIsTyping(false);
+      setIsGenerating(false);
     }
   };
 
@@ -88,9 +99,9 @@ export const MainPage = () => {
       {/* Sidebar */}
       <Sidebar />
 
-      {/* Main Workspace Workspace */}
+      {/* Main Workspace */}
       <main className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-        
+
         {/* Left Side: Chat Workspace */}
         <section className="flex-1 flex flex-col border-r border-border h-full md:h-full overflow-hidden">
           <header className="p-4 border-b border-border bg-secondary/50 flex items-center justify-between">
@@ -100,7 +111,7 @@ export const MainPage = () => {
               <span className="text-[9px] font-black uppercase tracking-widest">OLLAMA_ACTIVE</span>
             </div>
           </header>
-          
+
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {messages.length === 0 ? (
               <WelcomeScreen onSelectExample={handleSelectExample} />
@@ -109,15 +120,15 @@ export const MainPage = () => {
             )}
           </div>
 
-          <ChatInput onSend={handleSendMessage} isDisabled={isTyping || isRateLimited} />
+          <ChatInput onSend={handleSendMessage} isDisabled={isTyping || isGenerating || isRateLimited} />
         </section>
 
         {/* Right Side: Code Pane */}
         <section className="flex-1 flex flex-col h-full md:h-full overflow-hidden">
-          <CodeOutput 
-            code={generatedCode} 
-            onGenerate={handleGenerate} 
-            isGenerating={isTyping} 
+          <CodeOutput
+            code={generatedCode}
+            onGenerate={handleGenerate}
+            isGenerating={isGenerating}
           />
         </section>
       </main>
