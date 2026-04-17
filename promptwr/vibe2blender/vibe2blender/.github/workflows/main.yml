@@ -1,0 +1,41 @@
+name: Vibe2Blender CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install Node Dependencies
+      run: npm ci
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Ruff Linter
+      run: pip install ruff
+
+    - name: Lint Python Code
+      run: ruff check .
+
+    - name: Wasp Build Test
+      run: npx wasp build
+
+    - name: Docker Build Test
+      run: docker-compose -f infrastructure/docker-compose.yml build

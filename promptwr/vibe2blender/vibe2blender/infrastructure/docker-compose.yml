@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: vibe2blender
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - v2b-network
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - v2b-network
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.backend
+    restart: always
+    depends_on:
+      - db
+      - ollama
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/vibe2blender
+      OLLAMA_HOST: http://ollama:11434
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      WASP_AUTH_TOKEN_SECRET: ${WASP_AUTH_TOKEN_SECRET}
+    networks:
+      - v2b-network
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - v2b-network
+
+networks:
+  v2b-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  ollama_models:

@@ -1,0 +1,52 @@
+app vibe2blender {
+  wasp: {
+    version: "^0.23.0"
+  },
+  title: "vibe2blender",
+  head: [
+    "<link rel='icon' href='/favicon.ico' />",
+  ],
+  auth: {
+    userEntity: User,
+    methods: {
+      usernameAndPassword: {},
+    },
+    onAuthSucceededRedirectTo: "/",
+    onAuthFailedRedirectTo: "/login",
+  },
+  client: {
+    rootComponent: import { App } from "@src/App",
+  }
+}
+
+// #region Auth
+route LoginRoute { path: "/login", to: LoginPage }
+page LoginPage {
+  component: import { LoginPage } from "@src/auth/LoginPage"
+}
+
+route SignupRoute { path: "/signup", to: SignupPage }
+page SignupPage {
+  component: import { SignupPage } from "@src/auth/SignupPage"
+}
+// #endregion Auth
+
+// #region Core
+route MainRoute { path: "/", to: MainPage }
+page MainPage {
+  authRequired: true,
+  component: import { MainPage } from "@src/pages/MainPage"
+}
+
+action chat {
+  fn: import { chat } from "@src/features/chat/actions",
+  auth: true,
+  entities: [User]
+}
+
+action generateScript {
+  fn: import { generateScript } from "@src/features/generation/actions",
+  auth: true,
+  entities: [User, BlenderScript]
+}
+// #endregion Core
