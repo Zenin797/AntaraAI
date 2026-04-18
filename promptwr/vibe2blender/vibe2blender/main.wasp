@@ -3,7 +3,10 @@ app vibe2blender {
     version: "^0.23.0"
   },
   db: {
-    system: PostgreSQL
+    system: PostgreSQL,
+    prisma: {
+      clientPreviewFeatures: ["extendedWhereUnique"]
+    }
   },
   title: "vibe2blender",
   head: [
