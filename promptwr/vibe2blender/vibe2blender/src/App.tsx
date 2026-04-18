@@ -1,10 +1,14 @@
-import { Outlet } from "react-router";
-import "./Main.css";
+import React from 'react';
+import { Routes, Route } from 'react-router-dom';
+import { MainPage } from './pages/MainPage';
+import './Main.css';
 
 export function App() {
   return (
     <div className="min-h-screen bg-bg text-text">
-      <Outlet />
+      <Routes>
+        <Route path="/" element={<MainPage />} />
+      </Routes>
     </div>
   );
 }
