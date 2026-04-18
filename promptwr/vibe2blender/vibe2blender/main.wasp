@@ -2,6 +2,9 @@ app vibe2blender {
   wasp: {
     version: "^0.23.0"
   },
+  db: {
+    system: PostgreSQL
+  },
   title: "vibe2blender",
   head: [
     "<link rel='icon' href='/favicon.ico' />",
@@ -16,9 +19,6 @@ app vibe2blender {
   },
   client: {
     rootComponent: import { App } from "@src/App",
-  },
-  db: {
-    system: PostgreSQL
   }
 }
 
