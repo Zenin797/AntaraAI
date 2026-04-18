@@ -1,10 +1,10 @@
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 WORKDIR /app
 COPY . .
 RUN npm install -g @wasp.sh/wasp-cli@latest
 RUN wasp build
 
-FROM node:20-slim
+FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV production
 
