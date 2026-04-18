@@ -1,18 +1,20 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN npm ci && npm run build
+RUN npm install -g @wasp.sh/wasp-cli@latest
+RUN wasp build
 
 FROM node:20-alpine
 WORKDIR /app
+ENV NODE_ENV production
 
 # Install Python and Ruff for backend script formatting
 RUN apk add --no-cache python3 py3-pip && \
     pip install ruff --break-system-packages
 
-COPY --from=builder /app/dist /app/dist
-COPY --from=builder /app/node_modules /app/node_modules
-COPY --from=builder /app/package.json /app/package.json
+COPY --from=builder /app/.wasp/build/server /app/server
+WORKDIR /app/server
+RUN npm install
 
 EXPOSE 3001
-CMD ["npm", "run", "start-production"]
+CMD ["npm", "run", "start"]

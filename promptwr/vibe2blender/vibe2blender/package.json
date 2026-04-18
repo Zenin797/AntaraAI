@@ -2,8 +2,7 @@
   "name": "vibe2blender",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "postinstall": "node src/setup-wasp-stub.js"
+    "dev": "vite"
   },
   "workspaces": [
     ".wasp/out/*",
