@@ -2,7 +2,9 @@
   "name": "vibe2blender",
   "type": "module",
   "scripts": {
-    "dev": "vite"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "workspaces": [
     ".wasp/out/*",
@@ -14,6 +16,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.7.0",
     "axios": "^1.15.0",
+    "ollama": "^0.5.14",
     "prismjs": "^1.30.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
