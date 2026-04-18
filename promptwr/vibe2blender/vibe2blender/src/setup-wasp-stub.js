@@ -5,10 +5,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dest = path.join(__dirname, '..', 'node_modules', 'wasp', 'client');
-const filePath = path.join(dest, 'operations.js');
+const destOps = path.join(__dirname, '..', 'node_modules', 'wasp', 'client');
+const opsPath = path.join(destOps, 'operations.js');
+const authPath = path.join(destOps, 'auth.js');
 
-fs.mkdirSync(dest, { recursive: true });
+fs.mkdirSync(destOps, { recursive: true });
 
 const content = `export const chat = Symbol('chat');
 export const generateScript = Symbol('generateScript');
@@ -32,5 +33,15 @@ export function useAction(action) {
 }
 `;
 
-fs.writeFileSync(filePath, content, 'utf8');
-console.log('Wasp stub written to', filePath);
+fs.writeFileSync(opsPath, content, 'utf8');
+
+const authContent = `export function useAuth() {
+  return { data: { id: 'mock-user-1', email: 'test@example.com' }, isLoading: false, error: null };
+}
+export function logout() {
+  console.log('Mock logout');
+}
+`;
+fs.writeFileSync(authPath, authContent, 'utf8');
+
+console.log('Wasp stubs written to', destOps);
