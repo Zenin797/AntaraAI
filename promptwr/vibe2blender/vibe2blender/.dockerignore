@@ -1,0 +1,7 @@
+node_modules/
+.wasp/
+dist/
+build/
+.env
+.env.server
+.env.client
